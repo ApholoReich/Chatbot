@@ -1,6 +1,8 @@
 import csv
 from pathlib import Path
-from flask import Flask, abort, render_template, request
+from flask import Flask, abort, jsonify, render_template, request
+
+import chatbot
 
 app = Flask(__name__)
 DATA = Path(__file__).resolve().parent / "data"
@@ -55,6 +57,38 @@ def modulo(nombre):
     return render_template("modulo.html", activo=nombre, titulo=titulo, error=None,
                            columnas=columnas, filas=filas, imagen=imagen,
                            programas=programas, seleccionado=seleccionado)
+
+
+@app.route("/chatbot")
+def chatbot_pagina():
+    return render_template("chatbot.html", activo="chatbot")
+
+
+@app.post("/chatbot/preguntar")
+def chatbot_preguntar():
+    datos = request.get_json(silent=True) or {}
+    pregunta = str(datos.get("pregunta", "")).strip()
+    historial = datos.get("historial")
+
+    if not pregunta:
+        return jsonify(error="Escribe una pregunta."), 400
+    if len(pregunta) > 500:
+        return jsonify(error="La pregunta es demasiado larga (máximo 500 caracteres)."), 400
+    if not isinstance(historial, list):
+        historial = []
+
+    try:
+        respuesta = chatbot.responder(pregunta, historial)
+    except RuntimeError as error:  # falta GEMINI_API_KEY o GEMINI_MODEL en .env
+        app.logger.error("Configuración del chatbot: %s", error)
+        return jsonify(error="El chatbot no está configurado. Revisa el archivo .env."), 503
+    except FileNotFoundError as error:
+        app.logger.error("Archivo de datos no encontrado: %s", error)
+        return jsonify(error="Faltan archivos en la carpeta data."), 503
+    except Exception:
+        app.logger.exception("Error al consultar Gemini")
+        return jsonify(error="No pude consultar a Gemini en este momento. Intenta de nuevo."), 502
+    return jsonify(respuesta=respuesta)
 
 
 if __name__ == "__main__":

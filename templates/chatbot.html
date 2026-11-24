@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block titulo %}Chatbot{% endblock %}
+{% block contenido %}
+
+<style>
+    #mensajes { height: 420px; overflow-y: auto; border: 1px solid #dce4ed; border-radius: 8px; padding: 16px; background: #f7f9fc; margin-bottom: 16px; }
+    .msg { max-width: 85%; padding: 10px 14px; border-radius: 12px; margin-bottom: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .msg.usuario { background: #173b58; color: white; margin-left: auto; }
+    .msg.bot { background: white; border: 1px solid #dce4ed; }
+    .msg.error { background: #fff5df; border: 1px solid #ac7415; }
+    #form-chat { margin-bottom: 12px; flex-wrap: nowrap; }
+    #pregunta { flex: 1; padding: 12px; border: 1px solid #a6b5c5; border-radius: 6px; font-size: 15px; }
+    .ejemplos { display: flex; flex-wrap: wrap; gap: 8px; }
+    .ejemplos button { background: #e8eff6; color: #173b58; padding: 8px 12px; font-size: 14px; }
+</style>
+
+<section class="panel">
+    <h2>Asistente de consultas</h2>
+    <p>Pregunta en lenguaje natural sobre los subsidios históricos y las predicciones del modelo.</p>
+
+    <div id="mensajes" role="log" aria-live="polite">
+        <div class="msg bot">Hola, soy el asistente del proyecto. ¿Qué quieres saber sobre los subsidios de vivienda?</div>
+    </div>
+
+    <form id="form-chat">
+        <label for="pregunta" class="sr-only" style="position:absolute;left:-9999px">Pregunta</label>
+        <input id="pregunta" type="text" maxlength="500" placeholder="Ej: ¿Qué departamento tiene más subsidios?" autocomplete="off" required>
+        <button type="submit" id="enviar">Enviar</button>
+    </form>
+
+    <div class="ejemplos">
+        <button type="button">¿Qué departamento tiene más hogares beneficiados?</button>
+        <button type="button">¿Cuántos hogares se asignaron en Pereira entre 2018 y 2025?</button>
+        <button type="button">¿Cuál es la predicción general para los próximos años?</button>
+        <button type="button">¿Qué tan confiable es el modelo?</button>
+    </div>
+</section>
+
+<script>
+    const cajaMensajes = document.getElementById("mensajes");
+    const formulario = document.getElementById("form-chat");
+    const campo = document.getElementById("pregunta");
+    const botonEnviar = document.getElementById("enviar");
+    let historial = [];
+
+    function agregar(texto, clase) {
+        const div = document.createElement("div");
+        div.className = "msg " + clase;
+        div.textContent = texto;          // textContent evita inyección de HTML
+        cajaMensajes.appendChild(div);
+        cajaMensajes.scrollTop = cajaMensajes.scrollHeight;
+        return div;
+    }
+
+    async function enviar(pregunta) {
+        agregar(pregunta, "usuario");
+        const espera = agregar("Consultando los datos...", "bot");
+        botonEnviar.disabled = true;
+        try {
+            const r = await fetch("{{ url_for('chatbot_preguntar') }}", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ pregunta, historial })
+            });
+            const datos = await r.json();
+            if (!r.ok) {
+                espera.className = "msg error";
+                espera.textContent = datos.error || "Ocurrió un error.";
+            } else {
+                espera.textContent = datos.respuesta;
+                historial.push({ rol: "user", texto: pregunta }, { rol: "model", texto: datos.respuesta });
+                historial = historial.slice(-6);
+            }
+        } catch (e) {
+            espera.className = "msg error";
+            espera.textContent = "No se pudo conectar con el servidor.";
+        } finally {
+            botonEnviar.disabled = false;
+            campo.focus();
+        }
+    }
+
+    formulario.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const pregunta = campo.value.trim();
+        if (!pregunta) return;
+        campo.value = "";
+        enviar(pregunta);
+    });
+
+    document.querySelectorAll(".ejemplos button").forEach((b) =>
+        b.addEventListener("click", () => enviar(b.textContent))
+    );
+</script>
+{% endblock %}
